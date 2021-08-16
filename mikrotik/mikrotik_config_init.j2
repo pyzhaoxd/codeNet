@@ -1,0 +1,88 @@
+{# JustGroup Config -#}
+
+{# 01 IP Address -#}
+
+/ip address
+add address={{ conf.LAN_ADD }} comment=LAN_Address interface=bridge \
+network={{ conf.LAN_NET }}
+add address={{ conf.WAN_ADD }} comment=WAN_Address interface=ether1 \
+network={{ conf.WAN_NET }}
+add address={{ conf.WLAN_ADD }} comment=WLAN_Address interface=wlan1 \
+network={{ conf.WLAN_NET }}
+
+{#- 02 WIFI #}
+
+/interface wireless
+set [ find default-name=wlan1 ] band=2ghz-b/g/n channel-width=20/40mhz-XX \
+    disabled=no distance=indoors frequency=auto ssid={{ conf.SSID }} mode=station\
+    wireless-protocol=802.11	
+/interface wireless security-profiles
+set [ find default=yes ] authentication-types=wpa-psk,wpa2-psk group-ciphers=\
+    tkip,aes-ccm mode=dynamic-keys supplicant-identity=MikroTik \
+    unicast-ciphers=tkip,aes-ccm wpa-pre-shared-key={{ conf.WIFI_PASS }} \
+    wpa2-pre-shared-key={{ conf.WIFI_PASS }}
+
+{#- 03 DHCP #}
+	
+/ip pool
+add name=dhcp_pool1 ranges={{ conf.IP_POOL_1 }},{{ conf.IP_POOL_2 }}
+/ip dhcp-server
+add address-pool=dhcp_pool1 disabled=no interface=bridge name=dhcp1
+/ip dhcp-server network
+add address={{ conf.LAN_ADD }} dns-server={{ conf.DNS1 }},{{ conf.DNS2 }} \
+gateway={{ conf.LAN_ADD }}
+
+{#- 04 Routing #}
+
+/ip route
+add check-gateway=ping distance=1 gateway={{ conf.WAN_GW }}
+add distance=5 gateway={{ conf.WLAN_GW }}
+/routing prefix-lists
+add chain=rip prefix={{ conf.RIP_PREFIX }}
+add action=discard chain=rip
+/routing rip
+set redistribute-connected=yes
+/routing rip interface
+add interface=ether1 out-prefix-list=rip receive=v2
+/routing rip network
+add network={{ conf.WAN_NET	 }}
+
+{#-  05 IPSec #}
+
+/ip ipsec peer
+add address={{ conf.IPSEC_PEER }} name=peer1
+/ip ipsec profile
+set [ find default=yes ] dh-group=modp768 enc-algorithm=aes-128 \
+hash-algorithm=md5 lifetime=8h
+/ip ipsec proposal
+set [ find default=yes ] auth-algorithms=md5 enc-algorithms=aes-128-cbc \
+pfs-group=none
+/ip ipsec identity
+add peer=peer1 secret=spa8R4pePRAb
+/ip ipsec policy
+add action=none dst-address={{ conf.LAN_NET}} src-address={{ conf.LAN_NET }}
+add dst-address=0.0.0.0/0 sa-dst-address={{ conf.IPSEC_PEER }} sa-src-address=0.0.0.0 \
+src-address={{ conf.LAN_NET }} tunnel=yes
+
+{#- 06 NetWatch and Scirpts #}
+
+/tool netwatch
+add down-script=IPsecUp host={{ conf.WAN_GW }} up-script=IPsecDown
+/system script
+add dont-require-permissions=no name=IPsecDown owner=admin policy=\
+    read,write,test source="/ip ipsec peer set 0 disabled=yes\
+    \n/ip ipcec policy set 1 disabled=yes\
+    \n/ip ipsec policy set 2 disabled=yes "
+add dont-require-permissions=no name=IPsecUp owner=admin policy=\
+    read,write,test source="/ip ipsec peer set 0 disabled=no\
+    \n/ip ipcec policy set 1 disabled=no\
+    \n/ip ipsec policy set 2 disabled=no"
+	
+{#- 07 Service #}
+
+/ip service
+set ftp disabled=yes
+set api disabled=yes
+set winbox disabled=yes
+set api-ssl disabled=yes
+
